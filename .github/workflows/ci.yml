@@ -3,23 +3,25 @@ name: CI on Self-hosted Runner
 on:
   push:
     branches:
-      - dev  # Trigger automatically only for dev
-  workflow_dispatch:  # Allow manual trigger
-    inputs:
-      environment:
-        description: 'Environment to deploy'
-        required: false
-        default: 'production'
+      - dev      
+  workflow_dispatch:  
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/master'
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v3
-      - name: Run build
-        run: echo "Running on self-hosted runner"
-      - name: Pull latest code
+      - name: Print current branch
+        run: echo "Branch is ${{ github.ref }}"
+
+      - name: Deploy based on branch
         run: |
-          cd /home/weexcel/github-runner
-          git pull origin main
+          if [ "${GITHUB_REF##*/}" = "dev" ]; then
+            echo "Deploying to dev directory"
+            cd /home/weexcel/github-runner
+            git pull origin main
+          elif [ "${GITHUB_REF##*/}" = "master" ]; then
+            echo "Deploying to production directory"
+            cd /home/weexcel/prod-deploy-dir
+            git pull origin master
+          fi

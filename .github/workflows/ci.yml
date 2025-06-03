@@ -1,9 +1,19 @@
 name: CI on Self-hosted Runner
 
-on: [push]
+on:
+  push:
+    branches:
+      - dev  # Trigger automatically only for dev
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: false
+        default: 'production'
 
 jobs:
   build:
+    if: github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/master'
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3

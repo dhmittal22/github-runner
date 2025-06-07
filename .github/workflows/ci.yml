@@ -21,5 +21,8 @@ jobs:
         run: echo "Running on self-hosted runner"
       - name: Pull latest code
         run: |
-          cd /home/weexcel/github-runner
-          git pull origin main
+          TEMP_DIR=$(pwd)
+          DEST_DIR=/home/weexcel/github-runner
+          echo "Copying new files from $TEMP_DIR to $DEST_DIR..."
+          sudo cp -r $TEMP_DIR/* $DEST_DIR/ 
+          

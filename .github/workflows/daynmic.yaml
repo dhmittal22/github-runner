@@ -3,7 +3,7 @@ name: Dynamic Runner Matrix from AWS Secrets Manager (Prod)
 on:
   push:
     branches:
-      - prod
+      - main
 
 
 jobs:

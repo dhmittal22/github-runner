@@ -1,0 +1,56 @@
+name: Dynamic Runner Matrix from AWS Secrets Manager (Prod)
+
+on:
+  push:
+    branches:
+      - main
+
+
+jobs:
+  generate-matrix:
+    runs-on: [self-hosted, devops-tech]  
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+    - name: Fetch GitHub PAT and Repo from AWS Secrets Manager
+      id: secrets
+      run: |
+        ENVIRONMENT="prod"
+        SECRET_NAME="github/${ENVIRONMENT}-runner"
+
+        echo "Fetching runner config from AWS Secrets Manager: $SECRET_NAME"
+        SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text)
+        SECRET_JSON_2=$(aws secretsmanager get-secret-value --secret-id github/credentials --query SecretString --output text)
+        GITHUB_PAT=$(echo $SECRET_JSON_2 | jq -r '.token')
+        REPO=$(echo "$SECRET_JSON" | jq -r '.repos[0].repo')
+        echo "::add-mask::$GITHUB_PAT"
+        echo "GITHUB_PAT=$GITHUB_PAT" >> $GITHUB_ENV
+        echo "REPO=$REPO" >> $GITHUB_ENV
+
+    - name: Fetch List of Runners via GitHub API for ${{ env.REPO }}
+      id: set-matrix
+      run: |
+        TOKEN="$GITHUB_PAT"
+
+        runners=$(curl -s -H "Authorization: token $TOKEN" \
+          https://api.github.com/repos/$REPO/actions/runners)
+
+        names=$(echo $runners | jq -r '.runners[] | select(.labels[].name == "bs-prod-api") | .name' | jq -R . | jq -s .)
+
+        echo "Filtered Runners with label 'bs-prod-api': $names"
+
+        echo "matrix={\"runner\":$names}" >> $GITHUB_OUTPUT
+
+    - name: Show Generated Matrix
+      run: echo "${{ steps.set-matrix.outputs.matrix }}"
+
+  deploy:
+    needs: generate-matrix
+    strategy:
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    runs-on: [self-hosted, ${{ matrix.runner }}]
+    environment:
+      name: prod-report 
+    steps:
+    - name: Deploy on ${{ matrix.runner }}
+      run: echo "Deploying on ${{ matrix.runner }}"

@@ -3,7 +3,7 @@ name: Dynamic Runner Matrix from AWS Secrets Manager (Prod)
 on:
   push:
     branches:
-      - main
+      - prod
 
 
 jobs:
@@ -48,7 +48,7 @@ jobs:
     needs: generate-matrix
     strategy:
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
-    runs-on: [self-hosted, ${{ matrix.runner }}]
+    runs-on: ${{ matrix.runner }}
     environment:
       name: prod-report 
     steps:

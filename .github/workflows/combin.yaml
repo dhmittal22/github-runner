@@ -1,0 +1,78 @@
+name: Combined Environment Deployment
+
+on:
+  push:
+    branches: [prod, uat, dev]
+
+jobs:
+  generate-matrix:
+    if: github.ref == 'refs/heads/prod'
+    runs-on: bs-prod-api
+    environment: bs-prod-api
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Fetch GitHub PAT and Repo from AWS Secrets Manager
+        id: secrets
+        run: |
+          ENVIRONMENT="prod-api"
+          SECRET_NAME="github/${ENVIRONMENT}-runner"
+          echo "Fetching runner config from AWS Secrets Manager: $SECRET_NAME"
+          SECRET_JSON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_NAME" --query SecretString --output text)
+          SECRET_JSON_2=$(aws secretsmanager get-secret-value --secret-id github/credentials --query SecretString --output text)
+          GITHUB_PAT=$(echo $SECRET_JSON_2 | jq -r '.token')
+          REPO=$(echo "$SECRET_JSON" | jq -r '.repos[0].repo')
+          LABEL=$(echo "$SECRET_JSON" | jq -r '.repos[0].label') 
+          echo "::add-mask::$GITHUB_PAT"
+          echo "GITHUB_PAT=$GITHUB_PAT" >> $GITHUB_ENV
+          echo "REPO=$REPO" >> $GITHUB_ENV
+          echo "LABEL=$LABEL" >> $GITHUB_ENV
+
+      - name: Fetch Runners via GitHub API
+        id: set-matrix
+        run: |
+          TOKEN="$GITHUB_PAT"
+          runners=$(curl -s -H "Authorization: token $TOKEN" \
+            https://api.github.com/repos/$REPO/actions/runners)
+          names=$(echo $runners | jq -c --arg label "$LABEL" '
+            [ .runners[] 
+              | select([.labels[].name] | index($label))  
+              | .labels[] 
+              | select(.name | startswith("i-")) 
+              | .name
+            ]')
+          echo "Filtered EC2 Instance IDs: $names"
+          matrix_json=$(jq -nc --argjson runners "$names" '{runner: $runners}')
+          echo "matrix=$matrix_json" >> $GITHUB_OUTPUT
+
+      - name: Show Generated Matrix
+        run: echo "${{ steps.set-matrix.outputs.matrix }}"
+
+  deploy-prod:
+    if: github.ref == 'refs/heads/prod'
+    needs: generate-matrix
+    strategy:
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    environment: prod-api
+    steps:
+      - name: Deploy on ${{ matrix.runner }}
+        run: sudo sh /opt/scripts/bs-prod-api.sh
+
+  deploy-uat:
+    if: github.ref == 'refs/heads/uat'
+    runs-on: bs-uat-runner
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run UAT script
+        run: sudo sh /opt/scripts/bs-uat-api.sh
+
+  deploy-dev:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: bs-dev-runner
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run DEV script
+        run: sudo sh /opt/scripts/bs-dev-api.sh
